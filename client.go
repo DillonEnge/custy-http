@@ -20,7 +20,19 @@ func NewClient(baseURL string) *Client {
 }
 
 func (c *Client) Do(method Method, req *Request) (*Response, error) {
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s%s", c.baseURL, req.RequestTarget))
+	if req.RequestTarget == "" {
+		return nil, fmt.Errorf("missing request target")
+	}
+	if req.Accept == "" {
+		req.Accept = "*/*"
+	}
+	if req.Protocol == "" {
+		req.Protocol = "HTTP/1.1"
+	}
+
+	req.Method = string(method)
+
+	conn, err := net.Dial("tcp", c.baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +45,8 @@ func (c *Client) Do(method Method, req *Request) (*Response, error) {
 	if req.ContentLength != 0 && req.Body() != nil && len(req.Body()) > 0 {
 		req.ContentLength = len(req.Body())
 	}
+
+	req.Host = conn.LocalAddr().String()
 
 	if _, err := conn.Write([]byte(req.String())); err != nil {
 		return nil, err
