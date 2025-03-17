@@ -30,8 +30,8 @@ func (c *Client) Do(method Method, req *Request) (*Response, error) {
 		}
 	}()
 
-	if req.ContentLength != 0 && req.Body != nil && len(req.Body) > 0 {
-		req.ContentLength = len(req.Body)
+	if req.ContentLength != 0 && req.Body() != nil && len(req.Body()) > 0 {
+		req.ContentLength = len(req.Body())
 	}
 
 	if _, err := conn.Write([]byte(req.String())); err != nil {
@@ -121,7 +121,7 @@ func (c *Client) parseResponse(conn net.Conn) (*Response, error) {
 		headers = append(headers, t)
 	}
 
-	resp.Headers = headers
+	resp.SetHeaders(headers)
 
 	if resp.ContentLength == 0 {
 		slog.Info("no body expected", "resp.ContentLength", resp.ContentLength)
@@ -142,7 +142,7 @@ func (c *Client) parseResponse(conn net.Conn) (*Response, error) {
 			return nil, fmt.Errorf("content length exceeds provided length")
 		}
 
-		resp.Body = append(resp.Body, b)
+		resp.writeBytesToBody([]byte{b})
 
 		if contentLength == resp.ContentLength {
 			break

@@ -10,28 +10,12 @@ import (
 
 type HandlerFunc func(ctx context.Context, r *Request) (*Response, error)
 
-type Request struct {
-	Method        string
-	Body          []byte
-	RequestTarget string
-	Path          string
-	Protocol      string
-	Headers       []string
-	Host          string
-	UserAgent     string
-	Accept        string
-	ContentType   string
-	ContentLength int
-	Raw           []byte
-	queryParams   map[string]string
-}
-
 type Response struct {
-	Body          []byte
+	body          []byte
 	StatusCode    int
 	StatusText    string
 	Protocol      string
-	Headers       []string
+	headers       []string
 	Server        string
 	Date          string
 	CacheControl  string
@@ -43,67 +27,75 @@ type Response struct {
 	mu            sync.Mutex
 }
 
-func BadRequest() *Response {
+func badRequest() *Response {
 	return &Response{
 		StatusCode: 400,
 		StatusText: "Bad Request",
 	}
 }
 
-func InternalServerError() *Response {
+func internalServerError() *Response {
 	return &Response{
 		StatusCode: 500,
 		StatusText: "Internal Server Error",
 	}
 }
 
-func NotImplemented() *Response {
+func notImplemented() *Response {
 	return &Response{
 		StatusCode: 501,
 		StatusText: "Not Implemented",
 	}
 }
 
-func NotFound() *Response {
+func notFound() *Response {
 	return &Response{
 		StatusCode: 404,
 		StatusText: "Not Found",
 	}
 }
 
-func NoContent() *Response {
+func noContent() *Response {
 	return &Response{
 		StatusCode: 204,
 		StatusText: "No Content",
 	}
 }
 
-func (r Request) String() string {
-	headers := strings.Join(r.Headers, "\r\n")
-
-	req := fmt.Sprintf("%s %s %s\r\n%s\r\n", r.Method, r.RequestTarget, r.Protocol, headers)
-
-	if len(r.Body) == 0 {
-		return req + "\r\n"
-	}
-
-	return fmt.Sprintf("%s\r\n%s", req, string(r.Body))
-}
-
 func (r *Response) String() string {
-	headers := strings.Join(r.Headers, "\r\n")
+	headers := strings.Join(r.Headers(), "\r\n")
 
 	resp := fmt.Sprintf("%s %d %s\r\n%s\r\n", r.Protocol, r.StatusCode, r.StatusText, headers)
 
-	if len(r.Body) == 0 {
+	if len(r.Body()) == 0 {
 		return resp + "\r\n"
 	}
 
-	return fmt.Sprintf("%s\r\n%s", resp, string(r.Body))
+	return fmt.Sprintf("%s\r\n%s", resp, string(r.Body()))
 }
 
-func (r *Request) QueryParams() map[string]string {
-	return r.queryParams
+func (r *Response) Body() []byte {
+	r.mu.Lock()
+	body := make([]byte, len(r.body))
+	copy(body, r.body)
+	r.mu.Unlock()
+
+	return body
+}
+
+func (r *Response) Headers() []string {
+	r.mu.Lock()
+	headers := make([]string, len(r.headers))
+	copy(headers, r.headers)
+	r.mu.Unlock()
+
+	return headers
+}
+
+func (r *Response) SetHeaders(headers []string) {
+	r.mu.Lock()
+	r.headers = headers
+	r.mu.Unlock()
 }
 
 func (r *Response) populateHeaders() {
@@ -135,6 +127,12 @@ func (r *Response) populateHeaders() {
 
 func (r *Response) addHeader(key, value string) {
 	r.mu.Lock()
-	r.Headers = append(r.Headers, fmt.Sprintf("%s: %s", key, value))
+	r.headers = append(r.headers, fmt.Sprintf("%s: %s", key, value))
+	r.mu.Unlock()
+}
+
+func (r *Response) writeBytesToBody(b []byte) {
+	r.mu.Lock()
+	r.body = append(r.body, b...)
 	r.mu.Unlock()
 }

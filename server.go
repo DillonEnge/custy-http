@@ -82,8 +82,8 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 				slog.Error("error handling connection", "err", err)
 			}
 
-			if resp.ContentLength == 0 && resp.Body != nil && len(resp.Body) > 0 {
-				resp.ContentLength = len(resp.Body)
+			if resp.ContentLength == 0 && resp.Body() != nil && len(resp.Body()) > 0 {
+				resp.ContentLength = len(resp.Body())
 			}
 			if resp.Protocol == "" {
 				resp.Protocol = "HTTP/1.1"
@@ -111,26 +111,49 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) (*Response, erro
 
 	req, err := s.parseRequest(conn)
 	if err != nil {
-		return BadRequest(), err
+		return badRequest(), err
 	}
 
 	s.mu.RLock()
 	handlers, ok := s.routes[req.Path]
 	if !ok {
 		s.mu.RUnlock()
-		return NotFound(), fmt.Errorf("route not found")
+		return notFound(), fmt.Errorf("route not found")
 	}
 
 	handler, ok := handlers[Method(req.Method)]
 	if !ok {
 		s.mu.RUnlock()
-		return NotImplemented(), fmt.Errorf("method %s not found for route %s", req.Method, req.RequestTarget)
+		return notImplemented(), fmt.Errorf("method %s not found for route %s", req.Method, req.RequestTarget)
 	}
 	s.mu.RUnlock()
 
 	resp, err := handler(ctx, req)
 	if err != nil {
-		return InternalServerError(), err
+		return internalServerError(), err
+	}
+
+	if resp.StatusText == "" {
+		switch resp.StatusCode {
+		case 200:
+			resp.StatusText = "OK"
+		case 201:
+			resp.StatusText = "Created"
+		case 204:
+			resp.StatusText = "No Content"
+		case 400:
+			resp.StatusText = "Bad Request"
+		case 401:
+			resp.StatusText = "Unauthorized"
+		case 403:
+			resp.StatusText = "Forbidden"
+		case 404:
+			resp.StatusText = "Not Found"
+		case 500:
+			resp.StatusText = "Internal Server Error"
+		case 501:
+			resp.StatusText = "Not Implemented"
+		}
 	}
 
 	return resp, nil
@@ -222,7 +245,7 @@ func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 		headers = append(headers, t)
 	}
 
-	req.Headers = headers
+	req.setHeaders(headers)
 
 	if req.ContentLength == 0 {
 		slog.Info("no body expected", "req.ContentLength", req.ContentLength)
@@ -245,7 +268,7 @@ func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 			return nil, fmt.Errorf("content length exceeds provided length")
 		}
 
-		req.Body = append(req.Body, b)
+		req.writeBytesToBody([]byte{b})
 
 		if contentLength == req.ContentLength {
 			break
