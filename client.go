@@ -119,16 +119,16 @@ func (c *Client) parseResponse(conn net.Conn) (*Response, error) {
 
 		headerKey, headerValue := headerSplit[0], crlfReplacer.Replace(headerSplit[1])
 
-		switch headerKey {
-		case "Content-Type":
+		switch strings.ToLower(headerKey) {
+		case "content-type":
 			resp.ContentType = headerValue
-		case "Content-Length":
+		case "content-length":
 			resp.ContentLength, _ = strconv.Atoi(headerValue)
-		case "Cache-Control":
+		case "cache-control":
 			resp.CacheControl = headerValue
-		case "Date":
+		case "date":
 			resp.Date = headerValue
-		case "Server":
+		case "server":
 			resp.Server = headerValue
 		}
 

@@ -229,16 +229,16 @@ func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 
 		headerKey, headerValue := headerSplit[0], crlfReplacer.Replace(headerSplit[1])
 
-		switch headerKey {
-		case "Content-Type":
+		switch strings.ToLower(headerKey) {
+		case "content-type":
 			req.ContentType = headerValue
-		case "Content-Length":
+		case "content-length":
 			req.ContentLength, _ = strconv.Atoi(headerValue)
-		case "Host":
+		case "host":
 			req.Host = headerValue
-		case "User-Agent":
+		case "user-agent":
 			req.UserAgent = headerValue
-		case "Accept":
+		case "accept":
 			req.Accept = headerValue
 		}
 
