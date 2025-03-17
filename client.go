@@ -110,7 +110,7 @@ func (c *Client) parseResponse(conn net.Conn) (*Response, error) {
 			break
 		}
 
-		headerSplit := strings.Split(t, ": ")
+		headerSplit := strings.SplitN(t, ": ", 2)
 
 		if len(headerSplit) != 2 {
 			slog.Error("invalid header", "header", t)
