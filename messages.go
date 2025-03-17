@@ -14,6 +14,7 @@ type Request struct {
 	Method        string
 	Body          []byte
 	RequestTarget string
+	Path          string
 	Protocol      string
 	Headers       []string
 	Host          string
@@ -22,6 +23,7 @@ type Request struct {
 	ContentType   string
 	ContentLength int
 	Raw           []byte
+	queryParams   map[string]string
 }
 
 type Response struct {
@@ -76,59 +78,63 @@ func NoContent() *Response {
 	}
 }
 
-func (h Request) String() string {
-	headers := strings.Join(h.Headers, "\r\n")
+func (r Request) String() string {
+	headers := strings.Join(r.Headers, "\r\n")
 
-	req := fmt.Sprintf("%s %s %s\r\n%s\r\n", h.Method, h.RequestTarget, h.Protocol, headers)
+	req := fmt.Sprintf("%s %s %s\r\n%s\r\n", r.Method, r.RequestTarget, r.Protocol, headers)
 
-	if len(h.Body) == 0 {
+	if len(r.Body) == 0 {
 		return req + "\r\n"
 	}
 
-	return fmt.Sprintf("%s\r\n%s", req, string(h.Body))
+	return fmt.Sprintf("%s\r\n%s", req, string(r.Body))
 }
 
-func (h *Response) String() string {
-	headers := strings.Join(h.Headers, "\r\n")
+func (r *Response) String() string {
+	headers := strings.Join(r.Headers, "\r\n")
 
-	resp := fmt.Sprintf("%s %d %s\r\n%s\r\n", h.Protocol, h.StatusCode, h.StatusText, headers)
+	resp := fmt.Sprintf("%s %d %s\r\n%s\r\n", r.Protocol, r.StatusCode, r.StatusText, headers)
 
-	if len(h.Body) == 0 {
+	if len(r.Body) == 0 {
 		return resp + "\r\n"
 	}
 
-	return fmt.Sprintf("%s\r\n%s", resp, string(h.Body))
+	return fmt.Sprintf("%s\r\n%s", resp, string(r.Body))
 }
 
-func (h *Response) populateHeaders() {
-	if h.Server != "" {
-		h.addHeader("Server", h.Server)
+func (r *Request) QueryParams() map[string]string {
+	return r.queryParams
+}
+
+func (r *Response) populateHeaders() {
+	if r.Server != "" {
+		r.addHeader("Server", r.Server)
 	}
-	if h.Date != "" {
-		h.addHeader("Date", h.Date)
+	if r.Date != "" {
+		r.addHeader("Date", r.Date)
 	}
-	if h.CacheControl != "" {
-		h.addHeader("Cache-Control", h.CacheControl)
+	if r.CacheControl != "" {
+		r.addHeader("Cache-Control", r.CacheControl)
 	}
-	if h.ContentType != "" {
-		h.addHeader("Content-Type", h.ContentType)
+	if r.ContentType != "" {
+		r.addHeader("Content-Type", r.ContentType)
 	}
-	if h.ContentLength != 0 {
-		h.addHeader("Content-Length", strconv.Itoa(h.ContentLength))
+	if r.ContentLength != 0 {
+		r.addHeader("Content-Length", strconv.Itoa(r.ContentLength))
 	}
-	if h.Connection != "" {
-		h.addHeader("Connection", h.Connection)
+	if r.Connection != "" {
+		r.addHeader("Connection", r.Connection)
 	}
-	if h.ETag != "" {
-		h.addHeader("ETag", h.ETag)
+	if r.ETag != "" {
+		r.addHeader("ETag", r.ETag)
 	}
-	if h.LastModified != "" {
-		h.addHeader("Last-Modified", h.LastModified)
+	if r.LastModified != "" {
+		r.addHeader("Last-Modified", r.LastModified)
 	}
 }
 
-func (h *Response) addHeader(key, value string) {
-	h.mu.Lock()
-	h.Headers = append(h.Headers, fmt.Sprintf("%s: %s", key, value))
-	h.mu.Unlock()
+func (r *Response) addHeader(key, value string) {
+	r.mu.Lock()
+	r.Headers = append(r.Headers, fmt.Sprintf("%s: %s", key, value))
+	r.mu.Unlock()
 }

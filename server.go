@@ -109,127 +109,26 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) (*Response, erro
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	crlfReplacer := strings.NewReplacer("\r", "", "\n", "")
-
-	reader := bufio.NewReader(conn)
-
-	startLine, err := reader.ReadString('\n')
+	req, err := s.parseRequest(conn)
 	if err != nil {
-		slog.Error("failed to read startLine", "err", err)
 		return BadRequest(), err
-	}
-	startLineValues := strings.Split(crlfReplacer.Replace(startLine), " ")
-
-	if len(startLineValues) != 3 {
-		slog.Error("invalid start line", "startLine", startLine)
-		return BadRequest(), err
-	}
-
-	httpReq := Request{
-		Method:        startLineValues[0],
-		RequestTarget: startLineValues[1],
-		Protocol:      startLineValues[2],
 	}
 
 	s.mu.RLock()
-	handlers, ok := s.routes[httpReq.RequestTarget]
+	handlers, ok := s.routes[req.Path]
 	if !ok {
 		s.mu.RUnlock()
 		return NotFound(), fmt.Errorf("route not found")
 	}
 
-	handler, ok := handlers[Method(httpReq.Method)]
+	handler, ok := handlers[Method(req.Method)]
 	if !ok {
 		s.mu.RUnlock()
-		return NotImplemented(), fmt.Errorf("method %s not found for route %s", httpReq.Method, httpReq.RequestTarget)
+		return NotImplemented(), fmt.Errorf("method %s not found for route %s", req.Method, req.RequestTarget)
 	}
 	s.mu.RUnlock()
 
-	// Process headers
-	headers := []string{}
-	for {
-		// t := scanner.Text()
-		t, err := reader.ReadString('\n')
-		if err != nil {
-			slog.Error("failed to read header")
-			return BadRequest(), err
-		}
-
-		if b, err := reader.Peek(2); string(b) == "\r\n" {
-			if err != nil {
-				slog.Error("error peeking for end of headers", "err", err)
-				return BadRequest(), err
-			}
-			if _, err := reader.ReadBytes('\n'); err != nil {
-				slog.Error("error clearing crlf sequence after headers", "err", err)
-				return BadRequest(), err
-			}
-			break
-		}
-
-		fmt.Print(t)
-
-		headerSplit := strings.Split(t, ": ")
-
-		if len(headerSplit) != 2 {
-			slog.Error("invalid header", "header", t)
-			return BadRequest(), fmt.Errorf("invalid header")
-		}
-
-		headerKey, headerValue := headerSplit[0], crlfReplacer.Replace(headerSplit[1])
-
-		switch headerKey {
-		case "Content-Type":
-			httpReq.ContentType = headerValue
-		case "Content-Length":
-			httpReq.ContentLength, _ = strconv.Atoi(headerValue)
-		case "Host":
-			httpReq.Host = headerValue
-		case "User-Agent":
-			httpReq.UserAgent = headerValue
-		case "Accept":
-			httpReq.Accept = headerValue
-		}
-
-		headers = append(headers, t)
-	}
-
-	httpReq.Headers = headers
-
-	if httpReq.ContentLength == 0 {
-		slog.Info("no body expected", "httpReq.ContentLength", httpReq.ContentLength)
-
-	}
-
-	contentLength := 0
-
-	for range httpReq.ContentLength {
-		// b := scanner.Bytes()
-		b, err := reader.ReadByte()
-		if err != nil {
-			slog.Error("error reading next body byte", "err", err)
-			return BadRequest(), err
-		}
-		contentLength++
-
-		if contentLength > httpReq.ContentLength {
-			slog.Error("content length exceeds provided length", "contentLength", contentLength)
-			return BadRequest(), fmt.Errorf("content length exceeds provided length")
-		}
-
-		httpReq.Body = append(httpReq.Body, b)
-
-		if contentLength == httpReq.ContentLength {
-			break
-		}
-	}
-
-	if contentLength != httpReq.ContentLength {
-		slog.Error("mismatched content length", "contentLength", contentLength)
-		return BadRequest(), fmt.Errorf("mismatched content length")
-	}
-
-	resp, err := handler(ctx, &httpReq)
+	resp, err := handler(ctx, req)
 	if err != nil {
 		return InternalServerError(), err
 	}
@@ -249,4 +148,133 @@ func (s *Server) registerRoute(method Method, route string, f HandlerFunc) {
 		return
 	}
 	s.routes[route][method] = f
+}
+
+func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
+	crlfReplacer := strings.NewReplacer("\r", "", "\n", "")
+
+	reader := bufio.NewReader(conn)
+
+	startLine, err := reader.ReadString('\n')
+	if err != nil {
+		slog.Error("failed to read startLine", "err", err)
+		return nil, err
+	}
+	startLineValues := strings.Split(crlfReplacer.Replace(startLine), " ")
+
+	if len(startLineValues) != 3 {
+		slog.Error("invalid start line", "startLine", startLine)
+		return nil, err
+	}
+
+	req := Request{
+		Method:        startLineValues[0],
+		RequestTarget: startLineValues[1],
+		Protocol:      startLineValues[2],
+	}
+
+	req.Path, req.queryParams = pathAndQueryParamsFromRequestTarget(req.RequestTarget)
+
+	// Process headers
+	headers := []string{}
+	for {
+		// t := scanner.Text()
+		t, err := reader.ReadString('\n')
+		if err != nil {
+			slog.Error("failed to read header")
+			return nil, err
+		}
+
+		if b, err := reader.Peek(2); string(b) == "\r\n" {
+			if err != nil {
+				slog.Error("error peeking for end of headers", "err", err)
+				return nil, err
+			}
+			if _, err := reader.ReadBytes('\n'); err != nil {
+				slog.Error("error clearing crlf sequence after headers", "err", err)
+				return nil, err
+			}
+			break
+		}
+
+		headerSplit := strings.Split(t, ": ")
+
+		if len(headerSplit) != 2 {
+			slog.Error("invalid header", "header", t)
+			return nil, fmt.Errorf("invalid header")
+		}
+
+		headerKey, headerValue := headerSplit[0], crlfReplacer.Replace(headerSplit[1])
+
+		switch headerKey {
+		case "Content-Type":
+			req.ContentType = headerValue
+		case "Content-Length":
+			req.ContentLength, _ = strconv.Atoi(headerValue)
+		case "Host":
+			req.Host = headerValue
+		case "User-Agent":
+			req.UserAgent = headerValue
+		case "Accept":
+			req.Accept = headerValue
+		}
+
+		headers = append(headers, t)
+	}
+
+	req.Headers = headers
+
+	if req.ContentLength == 0 {
+		slog.Info("no body expected", "req.ContentLength", req.ContentLength)
+
+	}
+
+	contentLength := 0
+
+	for range req.ContentLength {
+		// b := scanner.Bytes()
+		b, err := reader.ReadByte()
+		if err != nil {
+			slog.Error("error reading next body byte", "err", err)
+			return nil, err
+		}
+		contentLength++
+
+		if contentLength > req.ContentLength {
+			slog.Error("content length exceeds provided length", "contentLength", contentLength)
+			return nil, fmt.Errorf("content length exceeds provided length")
+		}
+
+		req.Body = append(req.Body, b)
+
+		if contentLength == req.ContentLength {
+			break
+		}
+	}
+
+	if contentLength != req.ContentLength {
+		slog.Error("mismatched content length", "contentLength", contentLength)
+		return nil, fmt.Errorf("mismatched content length")
+	}
+
+	return &req, nil
+}
+
+func pathAndQueryParamsFromRequestTarget(requestTarget string) (string, map[string]string) {
+	splitRequestTarget := strings.SplitN(requestTarget, "?", 2)
+	path := splitRequestTarget[0]
+
+	queryParams := make(map[string]string)
+
+	if len(splitRequestTarget) != 2 {
+		return path, queryParams
+	}
+
+	queryParamsRaw := strings.Split(splitRequestTarget[1], "&")
+	for _, queryParam := range queryParamsRaw {
+		splitQueryParam := strings.SplitN(queryParam, "=", 2)
+		queryParams[splitQueryParam[0]] = splitQueryParam[1]
+	}
+
+	return path, queryParams
 }
