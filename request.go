@@ -62,7 +62,7 @@ func (r *Request) setHeaders(headers []string) {
 	r.mu.Unlock()
 }
 
-func (r *Request) writeBytesToBody(b []byte) {
+func (r *Request) WriteBytesToBody(b []byte) {
 	r.mu.Lock()
 	r.body = append(r.body, b...)
 	r.mu.Unlock()
