@@ -131,7 +131,7 @@ func (r *Response) addHeader(key, value string) {
 	r.mu.Unlock()
 }
 
-func (r *Response) writeBytesToBody(b []byte) {
+func (r *Response) WriteBytesToBody(b []byte) {
 	r.mu.Lock()
 	r.body = append(r.body, b...)
 	r.mu.Unlock()
