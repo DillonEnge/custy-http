@@ -156,7 +156,7 @@ func (c *Client) parseResponse(conn net.Conn) (*Response, error) {
 			return nil, fmt.Errorf("content length exceeds provided length")
 		}
 
-		resp.writeBytesToBody([]byte{b})
+		resp.WriteBytesToBody([]byte{b})
 
 		if contentLength == resp.ContentLength {
 			break

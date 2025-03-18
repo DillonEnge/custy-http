@@ -268,7 +268,7 @@ func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 			return nil, fmt.Errorf("content length exceeds provided length")
 		}
 
-		req.WriteBytesToBody([]byte{b})
+		req.writeBytesToBody([]byte{b})
 
 		if contentLength == req.ContentLength {
 			break
