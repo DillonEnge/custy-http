@@ -10,6 +10,8 @@ import (
 
 type HandlerFunc func(ctx context.Context, r *Request) (*Response, error)
 
+type MiddlewareFunc func(f HandlerFunc) HandlerFunc
+
 type Response struct {
 	body          []byte
 	StatusCode    int

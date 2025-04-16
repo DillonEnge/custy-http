@@ -15,6 +15,7 @@ import (
 type Method string
 
 const (
+	METHOD_HEAD    Method = "HEAD"
 	METHOD_GET     Method = "GET"
 	METHOD_POST    Method = "POST"
 	METHOD_PATCH   Method = "PATCH"
@@ -27,12 +28,14 @@ type Server struct {
 	readTimeout  time.Duration
 	writeTimeout time.Duration
 	routes       map[string]map[Method]HandlerFunc
+	middlewares  []MiddlewareFunc
 	mu           sync.RWMutex
 }
 
 func NewServer(opts ...func(*Server)) *Server {
 	s := &Server{
-		routes: make(map[string]map[Method]HandlerFunc),
+		routes:      make(map[string]map[Method]HandlerFunc),
+		middlewares: make([]MiddlewareFunc, 0),
 	}
 
 	for _, opt := range opts {
@@ -114,23 +117,43 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) (*Response, erro
 		return badRequest(), err
 	}
 
-	s.mu.RLock()
-	handlers, ok := s.routes[req.Path]
-	if !ok {
-		s.mu.RUnlock()
-		return notFound(), fmt.Errorf("route not found")
-	}
+	var handler HandlerFunc
 
-	handler, ok := handlers[Method(req.Method)]
-	if !ok {
-		s.mu.RUnlock()
-		return notImplemented(), fmt.Errorf("method %s not found for route %s", req.Method, req.RequestTarget)
-	}
+	s.mu.RLock()
+
+	func() {
+		handlers, ok := s.routes[req.Path]
+		if !ok {
+			handler = func(ctx context.Context, r *Request) (*Response, error) {
+				return notFound(), fmt.Errorf("route not found")
+			}
+			return
+		}
+
+		handler, ok = handlers[Method(req.Method)]
+		if !ok {
+			handler = func(ctx context.Context, r *Request) (*Response, error) {
+				return notImplemented(), fmt.Errorf("method %s not found for route %s", req.Method, req.RequestTarget)
+			}
+			return
+		}
+	}()
+
+	mws := make([]MiddlewareFunc, len(s.middlewares))
+	copy(mws, s.middlewares)
+
 	s.mu.RUnlock()
+
+	for i := len(mws); i > 0; i-- {
+		handler = mws[i-1](handler)
+	}
 
 	resp, err := handler(ctx, req)
 	if err != nil {
 		return internalServerError(), err
+	}
+	if resp == nil {
+		return internalServerError(), fmt.Errorf("nil response received")
 	}
 
 	if resp.StatusText == "" {
@@ -149,6 +172,8 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) (*Response, erro
 			resp.StatusText = "Forbidden"
 		case 404:
 			resp.StatusText = "Not Found"
+		case 418:
+			resp.StatusText = "I'm a teapot"
 		case 500:
 			resp.StatusText = "Internal Server Error"
 		case 501:
@@ -171,6 +196,13 @@ func (s *Server) registerRoute(method Method, route string, f HandlerFunc) {
 		return
 	}
 	s.routes[route][method] = f
+}
+
+func (s *Server) registerMiddleware(f MiddlewareFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.middlewares = append(s.middlewares, f)
 }
 
 func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
